@@ -4,6 +4,8 @@ import os
 import requests
 import urllib.parse
 
+from config import GRUPOS, KEYWORDS, CATEGORIA_ATIVA
+
 load_dotenv()
 
 # --- CONFIGURAÇÕES ---
@@ -13,20 +15,14 @@ api_hash = os.getenv('API_HASH')    # Substitua pelo seu API HASH
 notification_phone_number = os.getenv('NOTIFICATION_PHONE_NUMBER')  # Número do WhatsApp com código do país
 notification_api_id =       os.getenv('NOTIFICATION_API_ID')        # API ID do serviço de WhatsApp CallMeBot
 
+grupos_para_monitorar = GRUPOS[CATEGORIA_ATIVA]
 
-# Palavras-chave para monitorar
-# OBS: Para maior precisão, use o máximo de maneiras possíveis para essa palavra chave: 
-# Ex: water cooler, watercooler, water-cooler
-keywords = ['5060 ti', '5070', 'wideload', 'watercooler', 'water cooler']
+print(grupos_para_monitorar)
 
 # Cria a sessão (vai pedir seu número e código na primeira vez que rodar)
 client = TelegramClient('minha_sessao', api_id, api_hash)
 
-
-# ID do grupo que você quer monitorar.
-# target_group_id = None 
-
-@client.on(events.NewMessage()) # Monitora todas as mensagens recebidas, caso queira monitorar um grupo específico, use (chats=target_group_id)
+@client.on(events.NewMessage(chats=grupos_para_monitorar)) # Monitora todas as mensagens recebidas, caso queira monitorar um grupo específico, use (chats=target_group_id)
 async def monitor_messages(event):
     # Para descobrir o ID dos grupos, descomente a linha abaixo
     # print(f"Nome: {event.chat.title} | ID: {event.chat_id}")
@@ -34,7 +30,7 @@ async def monitor_messages(event):
     # Pega o texto da mensagem e converte para minúsculo para facilitar a busca
     message_text = event.raw_text.lower()
 
-    matched = next((key for key in keywords if key in message_text), None)
+    matched = next((key for key in KEYWORDS if key in message_text), None)
 
     if matched:
         print("🚨 ALERTA ENCONTRADO!")
@@ -43,7 +39,7 @@ async def monitor_messages(event):
         print(f"Link: https://t.me/c/{event.chat_id}/{event.id}")
 
         texto_alerta = (
-            f"🚨 {matched.capitalize} encontrado!\n"
+            f"🚨 {matched.capitalize()} encontrado!\n"
             f"Canal: {event.chat.title}\n\n"
             f"{event.raw_text}"
         )
@@ -58,7 +54,7 @@ async def enviar_mensagem(texto):
 
 async def enviar_telegram(texto):
     try:
-        await client.send_message('me', texto)
+        await client.send_message(notification_phone_number, texto)
         print("✅ Mensagem enviada via Telegram")
     except Exception as e:
         print(f"❌ Erro ao enviar Telegram: {e}")
