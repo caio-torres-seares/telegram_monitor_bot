@@ -9,8 +9,8 @@ from config import GRUPOS, KEYWORDS, CATEGORIA_ATIVA
 load_dotenv()
 
 # --- CONFIGURAÇÕES ---
-api_id = int(os.getenv('API_ID'))   # Substitua pelo seu API ID
-api_hash = os.getenv('API_HASH')    # Substitua pelo seu API HASH
+api_id = int(os.getenv('TELEGRAM_API_ID'))   # Substitua pelo seu API ID
+api_hash = os.getenv('TELEGRAM_API_HASH')    # Substitua pelo seu API HASH
 
 notification_phone_number = os.getenv('NOTIFICATION_PHONE_NUMBER')  # Número do WhatsApp com código do país
 notification_api_id =       os.getenv('NOTIFICATION_API_ID')        # API ID do serviço de WhatsApp CallMeBot
