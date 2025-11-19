@@ -58,8 +58,7 @@ Você pode adaptar as palavras-chave e a lógica para monitorar qualquer coisa:
 ### 1. Clone o repositório ou baixe os arquivos
 
 ```bash
-git clone <seu-repositorio>
-cd monitor-promocoes-telegram
+git clone https://github.com/caio-torres-seares/telegram_monitor_bot.git
 ```
 
 ### 2. Instale as dependências
