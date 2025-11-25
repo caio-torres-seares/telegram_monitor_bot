@@ -1,3 +1,4 @@
+from ast import pattern
 import re
 from telethon import TelegramClient, events
 from dotenv import load_dotenv
@@ -6,7 +7,10 @@ import requests
 import urllib.parse
 from datetime import datetime
 
-from config import GRUPOS, KEYWORDS, CATEGORIA_ATIVA
+from config.config import GRUPOS, CATEGORIA_ATIVA
+from config.pessoas import carregar_pessoas_environment
+from models.pessoa import Pessoa
+from config.patterns import KEYWORD_PATTERNS
 
 load_dotenv()
 
@@ -14,19 +18,15 @@ load_dotenv()
 api_id = int(os.getenv('TELEGRAM_API_ID'))   # Substitua pelo seu API ID
 api_hash = os.getenv('TELEGRAM_API_HASH')    # Substitua pelo seu API HASH
 
-notification_phone_number = os.getenv('NOTIFICATION_PHONE_NUMBER')  # Número do WhatsApp com código do país
-notification_api_id =       os.getenv('NOTIFICATION_API_ID')        # API ID do serviço de WhatsApp CallMeBot
-
-bug_notification_phone_number = os.getenv('BUG_NOTIFICATION_PHONE_NUMBER')        
-bug_notification_api_id =       os.getenv('BUG_NOTIFICATION_API_ID')        
-
 grupos_para_monitorar = GRUPOS[CATEGORIA_ATIVA]
 
-print("Grupos para monitorar: ",grupos_para_monitorar)
-print("Palavras-chaves: ", KEYWORDS)
-print("Categoria ativa: ", CATEGORIA_ATIVA.value)
-print("Números para notificação de keywords: ", notification_phone_number)
-print("Números para notificação de bugs: ", bug_notification_phone_number)
+# Carrega as pessoas do .env
+pessoas = carregar_pessoas_environment()
+
+
+print("Quantidade de pessoas carregadas: ", len(pessoas))
+for p in pessoas:
+    print(f"Nome: {p.nome}, Telefone: {p.phone_number}, WhatsApp API ID: {p.whatsapp_api}, Keywords: {p.keywords}")
 print("-"*50)
 
 # Cria a sessão (vai pedir seu número e código na primeira vez que rodar)
@@ -40,59 +40,38 @@ async def monitor_messages(event):
     # Pega o texto da mensagem e converte para minúsculo para facilitar a busca
     message_text = event.raw_text.lower()
 
-    if re.search(r'\bbug\b', message_text, re.IGNORECASE):
-        data_hora_br = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        print("Bug encontrado às: ",data_hora_br)
+    for pessoa in pessoas:
+        for keyword in pessoa.keywords:
+             # Se for um padrão especial, pega o regex dele
+            if keyword in KEYWORD_PATTERNS:
+                pattern = KEYWORD_PATTERNS[keyword]
+            else:
+                # Regex para palavra exata (com sua regra do "ti")
+                pattern = rf"\b{re.escape(keyword)}\b(?!\s*ti\b)"
 
-        texto_alerta = (
-            f"🐞 BUG encontrado às {data_hora_br}!\n"
-            f"Canal: {event.chat.title}\n\n"
-            f"{event.raw_text}"
-        )
-        await enviar_mensagem(texto_alerta, bug_notification_phone_number, bug_notification_api_id)
-        return
+                if re.search(pattern, message_text, re.IGNORECASE):
+                    data_hora_br = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
+                    print(f"🎯 {keyword} encontrado para {pessoa.nome} às {data_hora_br}")
+                    
+                    texto_alerta = (
+                        f"🚨 Olá {pessoa.nome}, o item: {keyword.capitalize()} foi encontrado às {data_hora_br}!\n"
+                        f"Canal: {event.chat.title}\n\n"
+                        f"{event.raw_text}"
+                    )
 
-    matched = next(
-        (key for key in KEYWORDS if re.search(
-            rf'\b{re.escape(key)}\b(?!\s*ti\b)', # Correção para pegar a palavra exata: ex: "5070" mas não "5070 ti"
-            message_text,
-            re.IGNORECASE
-        )),
-        None
-    )
+                    await enviar_mensagem(texto_alerta, pessoa)
 
-    if matched:
-        data_hora_br = datetime.now().strftime("%d/%m/%Y %H:%M:%S")     
-
-        print(f"🚨 {matched.capitalize()} encontrado às {data_hora_br}!")
-        print(f"Mensagem: {event.raw_text}")
-
-        texto_alerta = (
-            f"🚨 {matched.capitalize()} encontrado às {data_hora_br}!\n"
-            f"Canal: {event.chat.title}\n\n"
-            f"{event.raw_text}"
-        )
-
-        await enviar_mensagem(texto_alerta, notification_phone_number, notification_api_id)
+                    # Para após encontrar a primeira keyword dessa pessoa:
+                    break
 
 
-async def enviar_mensagem(texto, notification_phone_number=notification_phone_number, notification_api_id=notification_api_id):
+async def enviar_mensagem(texto: str, pessoa: Pessoa):
     # Envia para Telegram e WhatsApp
-    numeros = notification_phone_number.split(',')
-    apis = notification_api_id.split(',')
+    await enviar_telegram(texto, pessoa.phone_number)
 
-    if len(apis) == 1:
-        apis = apis * len(numeros)
-
-    if len(apis) < len(numeros):
-        apis += ["0"] * (len(numeros) - len(apis))
-
-
-    for number_phone, api_id in zip(numeros, apis):
-        await enviar_telegram(texto, number_phone)
-        if api_id != "0":
-            await enviar_whatsapp(texto, number_phone, api_id) 
+    if pessoa.whatsapp_api != "0":
+        await enviar_whatsapp(texto, pessoa.phone_number, pessoa.whatsapp_api) 
 
 async def enviar_telegram(texto, phone_number):
     try:
@@ -114,5 +93,6 @@ async def enviar_whatsapp(texto, phone_number, api_id):
 
 # Inicia o cliente
 print("Monitorando...")
+print("-"*50)
 client.start()
 client.run_until_disconnected()
