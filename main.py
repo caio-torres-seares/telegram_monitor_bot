@@ -49,21 +49,21 @@ async def monitor_messages(event):
                 # Regex para palavra exata (com sua regra do "ti")
                 pattern = rf"\b{re.escape(keyword)}\b(?!\s*ti\b)"
 
-                if re.search(pattern, message_text, re.IGNORECASE):
-                    data_hora_br = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            if re.search(pattern, message_text, re.IGNORECASE):
+                data_hora_br = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
-                    print(f"🎯 {keyword} encontrado para {pessoa.nome} às {data_hora_br}")
-                    
-                    texto_alerta = (
-                        f"🚨 Olá {pessoa.nome}, o item: {keyword.capitalize()} foi encontrado às {data_hora_br}!\n"
-                        f"Canal: {event.chat.title}\n\n"
-                        f"{event.raw_text}"
-                    )
+                print(f"🎯 {keyword} encontrado para {pessoa.nome} às {data_hora_br}")
+                
+                texto_alerta = (
+                    f"🚨 Olá {pessoa.nome}, o item: {keyword.capitalize()} foi encontrado às {data_hora_br}!\n"
+                    f"Canal: {event.chat.title}\n\n"
+                    f"{event.raw_text}"
+                )
 
-                    await enviar_mensagem(texto_alerta, pessoa)
+                await enviar_mensagem(texto_alerta, pessoa)
 
-                    # Para após encontrar a primeira keyword dessa pessoa:
-                    break
+                # Para após encontrar a primeira keyword dessa pessoa:
+                break
 
 
 async def enviar_mensagem(texto: str, pessoa: Pessoa):
@@ -92,7 +92,7 @@ async def enviar_whatsapp(texto, phone_number, api_id):
 
 
 # Inicia o cliente
-print("Monitorando...")
+print("Iniciando monitoramento às", datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
 print("-"*50)
 client.start()
 client.run_until_disconnected()
