@@ -1,15 +1,24 @@
+import platform
 import re
 import unicodedata
 from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 from dotenv import load_dotenv
 import os
 import requests
 import urllib.parse
 from datetime import datetime, timedelta
-from winotify import Notification, audio
+
+IS_WINDOWS = platform.system() == "Windows"
+if IS_WINDOWS:
+    try:
+        from winotify import Notification, audio
+    except ImportError:
+        IS_WINDOWS = False
 
 from config.config import GRUPOS, CATEGORIA_ATIVA
 from config.pessoas import carregar_pessoas_environment
+from config.keywords_store import aplicar_keywords_persistidas, salvar_keywords
 from models.pessoa import Pessoa
 from config.patterns import KEYWORD_PATTERNS
 
@@ -18,11 +27,21 @@ load_dotenv()
 api_id = int(os.getenv('TELEGRAM_API_ID'))
 api_hash = os.getenv('TELEGRAM_API_HASH')
 NTFY_TOPIC = os.getenv('NTFY_TOPIC')  # ex: "caio-promos-abc123" (crie um nome único)
+STRING_SESSION = os.getenv('TELEGRAM_STRING_SESSION')  # usado em produção/VM (gerado por generate_session.py)
+OWNER_NAME = os.getenv('OWNER_NAME', 'Caio')  # pessoa usada por padrão nos comandos /kw sem destinatário
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # bot criado no @BotFather, só pra notificar o dono
+TELEGRAM_BOT_CHAT_ID = os.getenv('TELEGRAM_BOT_CHAT_ID')  # obtido com get_chat_id.py
 
 grupos_para_monitorar = GRUPOS[CATEGORIA_ATIVA]
 pessoas = carregar_pessoas_environment()
+aplicar_keywords_persistidas(pessoas)  # keywords passam a ser editáveis em runtime via comando /kw
 
-client = TelegramClient('minha_sessao', api_id, api_hash)
+# Em produção (servidor), a sessão vem de variável de ambiente, sem deixar arquivo .session no disco.
+# Localmente, sem TELEGRAM_STRING_SESSION definido, continua usando o arquivo 'minha_sessao.session' como antes.
+if STRING_SESSION:
+    client = TelegramClient(StringSession(STRING_SESSION), api_id, api_hash)
+else:
+    client = TelegramClient('minha_sessao', api_id, api_hash)
 
 ENVIADOS: dict[str, datetime] = {}
 REPEAT_MINUTES = 20
@@ -84,6 +103,78 @@ async def monitor_messages(event):
         #     break
 
 
+def encontrar_pessoa(nome: str):
+    nome = nome.strip().lower()
+    for pessoa in pessoas:
+        if pessoa.nome.lower() == nome:
+            return pessoa
+    return None
+
+
+def parse_alvo_e_keyword(resto: str):
+    """'creatina' -> (OWNER_NAME, 'creatina') | 'Maria: rtx 4070' -> ('Maria', 'rtx 4070')"""
+    if ":" in resto:
+        nome, keyword = resto.split(":", 1)
+        return nome.strip(), keyword.strip()
+    return OWNER_NAME, resto.strip()
+
+
+def formatar_lista_keywords():
+    linhas = [f"• {pessoa.nome}: {', '.join(pessoa.keywords) or '(nenhuma)'}" for pessoa in pessoas]
+    return "📋 Keywords monitoradas:\n" + "\n".join(linhas)
+
+
+AJUDA_KW = (
+    "Comandos disponíveis:\n"
+    "/kw list — lista as keywords de todo mundo\n"
+    "/kw add <keyword> — adiciona pra você\n"
+    "/kw add <Nome>: <keyword> — adiciona pra outra pessoa\n"
+    "/kw remove <keyword> — remove de você\n"
+    "/kw remove <Nome>: <keyword> — remove de outra pessoa"
+)
+
+
+@client.on(events.NewMessage(outgoing=True, chats='me'))
+async def gerenciar_keywords(event):
+    texto = event.raw_text.strip()
+    if not texto.lower().startswith("/kw"):
+        return
+
+    partes = texto.split(maxsplit=2)
+    acao = partes[1].lower() if len(partes) > 1 else "help"
+
+    if acao == "list":
+        await event.reply(formatar_lista_keywords())
+        return
+
+    if acao in ("add", "remove") and len(partes) == 3:
+        nome_alvo, keyword = parse_alvo_e_keyword(partes[2])
+        keyword = keyword.lower()
+        pessoa = encontrar_pessoa(nome_alvo)
+
+        if not pessoa:
+            await event.reply(f"❌ Pessoa '{nome_alvo}' não encontrada. Nomes cadastrados: {', '.join(p.nome for p in pessoas)}")
+            return
+
+        if acao == "add":
+            if keyword in pessoa.keywords:
+                await event.reply(f"'{keyword}' já estava na lista de {pessoa.nome}.")
+                return
+            pessoa.keywords.append(keyword)
+            salvar_keywords(pessoas)
+            await event.reply(f"✅ Adicionado '{keyword}' para {pessoa.nome}.")
+        else:
+            if keyword not in pessoa.keywords:
+                await event.reply(f"'{keyword}' não estava na lista de {pessoa.nome}.")
+                return
+            pessoa.keywords.remove(keyword)
+            salvar_keywords(pessoas)
+            await event.reply(f"🗑️ Removido '{keyword}' de {pessoa.nome}.")
+        return
+
+    await event.reply(AJUDA_KW)
+
+
 def normalizar_produto(texto, keyword, pattern=None):
     txt = texto.lower()
     txt = ''.join(c for c in txt if not unicodedata.category(c).startswith('So'))
@@ -103,11 +194,14 @@ def normalizar_produto(texto, keyword, pattern=None):
 
 
 async def enviar_mensagem(texto: str, pessoa: Pessoa, palavra_chave: str):
-    if pessoa.nome == "Caio":
+    if pessoa.nome == OWNER_NAME:
+        # Mandar via client.send_message pro próprio número cai em "Mensagens Salvas" e aparece
+        # como enviada por você (sem notificação de recebimento) — por isso usamos um bot à parte.
         await notificar_windows(palavra_chave, texto)
         await notificar_ntfy(palavra_chave, texto)  # ← push no celular
-
-    await enviar_telegram(texto, pessoa.phone_number)
+        await notificar_telegram_bot(texto)
+    else:
+        await enviar_telegram(texto, pessoa.phone_number)
 
     if pessoa.whatsapp_api != "0":
         await enviar_whatsapp(texto, pessoa.phone_number, pessoa.whatsapp_api)
@@ -132,6 +226,8 @@ async def enviar_whatsapp(texto, phone_number, api_id):
 
 
 async def notificar_windows(titulo: str, mensagem: str):
+    if not IS_WINDOWS:
+        return
     try:
         toast = Notification(
             app_id="Monitor Promos",
@@ -143,6 +239,29 @@ async def notificar_windows(titulo: str, mensagem: str):
         toast.show()
     except Exception as e:
         print(f"X - Erro notificação Windows: {e}")
+
+
+async def notificar_telegram_bot(mensagem: str):
+    """
+    Notificação via bot próprio (criado no @BotFather), em vez de mandar pra si mesmo pelo
+    userbot — assim chega como mensagem recebida de verdade (com push e som), não como
+    "enviada por você" em Mensagens Salvas.
+    1. Crie um bot com @BotFather e pegue o token
+    2. Mande qualquer mensagem pro bot (ex: /start) pra abrir a conversa
+    3. Rode get_chat_id.py pra descobrir o TELEGRAM_BOT_CHAT_ID
+    4. Preencha TELEGRAM_BOT_TOKEN e TELEGRAM_BOT_CHAT_ID no .env
+    """
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_BOT_CHAT_ID:
+        return
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_BOT_CHAT_ID, "text": mensagem},
+            timeout=10,
+        )
+        print("Notificação enviada via bot do Telegram")
+    except Exception as e:
+        print(f"X - Erro ao enviar notificação via bot: {e}")
 
 
 async def notificar_ntfy(titulo: str, mensagem: str):
