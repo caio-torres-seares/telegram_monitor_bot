@@ -18,7 +18,7 @@ if IS_WINDOWS:
 
 from config.config import GRUPOS, CATEGORIA_ATIVA
 from config.pessoas import carregar_pessoas_environment
-from config.keywords_store import aplicar_keywords_persistidas, salvar_keywords
+from config.keywords_store import aplicar_keywords_persistidas, salvar_keywords, carregar_blocklist, salvar_blocklist
 from models.pessoa import Pessoa
 from config.patterns import KEYWORD_PATTERNS
 
@@ -35,6 +35,7 @@ TELEGRAM_BOT_CHAT_ID = os.getenv('TELEGRAM_BOT_CHAT_ID')  # obtido com get_chat_
 grupos_para_monitorar = GRUPOS[CATEGORIA_ATIVA]
 pessoas = carregar_pessoas_environment()
 aplicar_keywords_persistidas(pessoas)  # keywords passam a ser editáveis em runtime via comando /kw
+BLOCKLIST = carregar_blocklist()  # {"whey protein": ["pasta de amendoim"], ...} — via /kw block
 
 # Em produção (servidor), a sessão vem de variável de ambiente, sem deixar arquivo .session no disco.
 # Localmente, sem TELEGRAM_STRING_SESSION definido, continua usando o arquivo 'minha_sessao.session' como antes.
@@ -72,6 +73,10 @@ async def monitor_messages(event):
 
             if not re.search(pattern, message_text, re.IGNORECASE):
                 continue  # ← mais limpo que if aninhado
+
+            if mensagem_bloqueada(keyword, message_text):
+                print(f"[SKIP] '{keyword_real}' ignorado por termo bloqueado")
+                continue
 
             produto_normalizado = normalizar_produto(message_text, keyword_real, pattern)
             agora = datetime.now()
@@ -119,9 +124,28 @@ def parse_alvo_e_keyword(resto: str):
     return OWNER_NAME, resto.strip()
 
 
+def parse_keyword_e_termo(resto: str):
+    """'whey protein: pasta de amendoim' -> ('whey protein', 'pasta de amendoim')"""
+    if ":" not in resto:
+        return None, None
+    keyword, termo = resto.split(":", 1)
+    return keyword.strip().lower(), termo.strip().lower()
+
+
+def mensagem_bloqueada(keyword: str, message_text: str) -> bool:
+    termos = BLOCKLIST.get(keyword.lower(), [])
+    return any(termo in message_text for termo in termos)
+
+
 def formatar_lista_keywords():
     linhas = [f"• {pessoa.nome}: {', '.join(pessoa.keywords) or '(nenhuma)'}" for pessoa in pessoas]
-    return "📋 Keywords monitoradas:\n" + "\n".join(linhas)
+    texto = "📋 Keywords monitoradas:\n" + "\n".join(linhas)
+
+    linhas_block = [f"• {kw}: ignora \"{', '.join(termos)}\"" for kw, termos in BLOCKLIST.items() if termos]
+    if linhas_block:
+        texto += "\n\n🚫 Termos ignorados:\n" + "\n".join(linhas_block)
+
+    return texto
 
 
 AJUDA_KW = (
@@ -130,7 +154,9 @@ AJUDA_KW = (
     "/kw add <keyword> — adiciona pra você\n"
     "/kw add <Nome>: <keyword> — adiciona pra outra pessoa\n"
     "/kw remove <keyword> — remove de você\n"
-    "/kw remove <Nome>: <keyword> — remove de outra pessoa"
+    "/kw remove <Nome>: <keyword> — remove de outra pessoa\n"
+    "/kw block <keyword>: <termo> — ignora mensagens de <keyword> que contenham <termo>\n"
+    "/kw unblock <keyword>: <termo> — remove esse filtro"
 )
 
 
@@ -170,6 +196,30 @@ async def gerenciar_keywords(event):
             pessoa.keywords.remove(keyword)
             salvar_keywords(pessoas)
             await event.reply(f"🗑️ Removido '{keyword}' de {pessoa.nome}.")
+        return
+
+    if acao in ("block", "unblock") and len(partes) == 3:
+        keyword, termo = parse_keyword_e_termo(partes[2])
+        if not keyword or not termo:
+            await event.reply("Formato: /kw block <keyword>: <termo a ignorar>")
+            return
+
+        termos = BLOCKLIST.setdefault(keyword, [])
+
+        if acao == "block":
+            if termo in termos:
+                await event.reply(f"'{termo}' já estava bloqueado para '{keyword}'.")
+                return
+            termos.append(termo)
+            salvar_blocklist(BLOCKLIST)
+            await event.reply(f"🚫 Mensagens de '{keyword}' contendo '{termo}' serão ignoradas.")
+        else:
+            if termo not in termos:
+                await event.reply(f"'{termo}' não estava bloqueado para '{keyword}'.")
+                return
+            termos.remove(termo)
+            salvar_blocklist(BLOCKLIST)
+            await event.reply(f"✅ Removido bloqueio de '{termo}' para '{keyword}'.")
         return
 
     await event.reply(AJUDA_KW)

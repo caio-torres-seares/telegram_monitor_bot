@@ -8,11 +8,19 @@ KEYWORDS_FILE = os.getenv(
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "keywords.json"),
 )
 
+# Termos que, quando presentes na mensagem, fazem o match daquela keyword ser ignorado
+# (ex: "whey protein" -> ["pasta de amendoim"] pra não alertar produtos que só citam
+# whey como ingrediente). Editável em runtime via /kw block|unblock.
+BLOCKLIST_FILE = os.getenv(
+    "BLOCKLIST_FILE",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "blocklist.json"),
+)
 
-def _ler_arquivo():
-    if not os.path.exists(KEYWORDS_FILE):
+
+def _ler_arquivo(caminho):
+    if not os.path.exists(caminho):
         return None
-    with open(KEYWORDS_FILE, "r", encoding="utf-8") as f:
+    with open(caminho, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -27,7 +35,7 @@ def aplicar_keywords_persistidas(pessoas):
     """Na primeira vez (arquivo ainda não existe), usa o que veio do .env como ponto de
     partida e já salva. Nas próximas vezes, o arquivo manda — o .env só serve de fallback
     para pessoas novas que ainda não tenham entrado no arquivo."""
-    dados = _ler_arquivo()
+    dados = _ler_arquivo(KEYWORDS_FILE)
     if dados is None:
         salvar_keywords(pessoas)
         return
@@ -41,3 +49,13 @@ def aplicar_keywords_persistidas(pessoas):
 
     if houve_pessoa_nova:
         salvar_keywords(pessoas)
+
+
+def carregar_blocklist():
+    return _ler_arquivo(BLOCKLIST_FILE) or {}
+
+
+def salvar_blocklist(blocklist):
+    os.makedirs(os.path.dirname(BLOCKLIST_FILE), exist_ok=True)
+    with open(BLOCKLIST_FILE, "w", encoding="utf-8") as f:
+        json.dump(blocklist, f, ensure_ascii=False, indent=2)
