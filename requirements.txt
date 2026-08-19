@@ -1,3 +1,4 @@
 telethon
 python-dotenv
 requests
+winotify; platform_system=="Windows"

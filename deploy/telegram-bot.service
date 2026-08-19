@@ -1,0 +1,24 @@
+[Unit]
+Description=Telegram Promo Monitor Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=telegrambot
+Group=telegrambot
+WorkingDirectory=/opt/telegram_bot
+EnvironmentFile=/opt/telegram_bot/.env
+ExecStart=/opt/telegram_bot/.venv/bin/python /opt/telegram_bot/main.py
+Restart=on-failure
+RestartSec=10
+
+# Hardening: processo roda sem privilégios extra, sem acesso de escrita fora da própria pasta
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/telegram_bot
+
+[Install]
+WantedBy=multi-user.target
