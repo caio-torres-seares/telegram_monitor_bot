@@ -2,7 +2,7 @@ from enums.categorias import Categoria
 
 # Escolha a categoria que deseja monitorar:
 # Valores possíveis: Categoria.TODOS, Categoria.HARDWARE, Categoria.OFERTAS_GERAIS, Categoria.PERIFERICOS
-CATEGORIA_ATIVA = Categoria.HARDWARE  
+CATEGORIA_ATIVA = Categoria.TODOS  
 
 # --- ORGANIZAÇÃO DOS GRUPOS POR CATEGORIA ---
 GRUPOS = {
@@ -14,7 +14,10 @@ GRUPOS = {
         -1002010294945,  # Shark das Promoções
         -1001648542394,  # PEPERAIO HARDWARE OFERTAS
         -1001435153850,  # CMdias 
-        #-1001769286072,  # Pichau
+        #-1001769286072, # Pichau
+        -1001622757657,  # PC DO FAFA PROMOÇÕES
+        -1001323293802,  # Guigão GPUs no Precinho
+
     ],
     Categoria.OFERTAS_GERAIS: [
         -1002129881785,  # PEPERAIO OFERTAS GERAIS
@@ -25,6 +28,7 @@ GRUPOS = {
         -1001455644663,  # Cupons Tt Tech&TudoTecnologia💸
         -1001686905299,  # Bench Promos - Cupons e Promoções
         -1001319492842,  # Jersu Indica
+        -1003231851655,  # Grupo de Ofertas💵 Saúde em Forma💙
     ],
     Categoria.PERIFERICOS: [
         -1001569488789,  # Ofertas Gamer 🎮
@@ -34,11 +38,21 @@ GRUPOS = {
         -1002064946182,  # 🛒 WL PROMOÇÕES DE HARDWARE's 🛒
         -1001871700299,  # Fraguas84 Promoções
     ],
+    Categoria.CUPONS: [
+        -1001764811887,  # CUPONS DE DESCONTO DO PEPE
+    ],
     Categoria.TODOS: []  # Será preenchido automaticamente
 }
+
+# Para ignorar:
+# -1002330109439 | Busca CPF, Placa Endereço 🧾
+# -1001346445408 | Cafeína Help | Iniciantes em TI
+# -1001272487537 | Terabyte Ofertas
+# -1002325726246 | Guiga Mercadinho
 
 GRUPOS[Categoria.TODOS] = [
     *GRUPOS[Categoria.HARDWARE],
     *GRUPOS[Categoria.OFERTAS_GERAIS],
-    *GRUPOS[Categoria.PERIFERICOS]
+    *GRUPOS[Categoria.PERIFERICOS],
+    *GRUPOS[Categoria.CUPONS]
 ]
