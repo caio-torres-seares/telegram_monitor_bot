@@ -5,3 +5,4 @@ class Categoria(Enum):
     HARDWARE = 'hardware'
     OFERTAS_GERAIS = 'ofertas_gerais'
     PERIFERICOS = 'perifericos'
+    CUPONS = 'cupons'
