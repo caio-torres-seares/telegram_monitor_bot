@@ -18,7 +18,14 @@ if IS_WINDOWS:
 
 from config.config import GRUPOS, CATEGORIA_ATIVA
 from config.pessoas import carregar_pessoas_environment
-from config.keywords_store import aplicar_keywords_persistidas, salvar_keywords, carregar_blocklist, salvar_blocklist
+from config.keywords_store import (
+    aplicar_keywords_persistidas,
+    salvar_keywords,
+    carregar_blocklist,
+    salvar_blocklist,
+    carregar_pessoas_extras,
+    salvar_pessoas_extras,
+)
 from models.pessoa import Pessoa
 from config.patterns import KEYWORD_PATTERNS
 
@@ -34,6 +41,16 @@ TELEGRAM_BOT_CHAT_ID = os.getenv('TELEGRAM_BOT_CHAT_ID')  # obtido com get_chat_
 
 grupos_para_monitorar = GRUPOS[CATEGORIA_ATIVA]
 pessoas = carregar_pessoas_environment()
+
+PESSOAS_EXTRA = carregar_pessoas_extras()  # gente cadastrada via /kw newperson, sem precisar de .env
+for extra in PESSOAS_EXTRA:
+    pessoas.append(Pessoa(
+        nome=extra["nome"],
+        phone_number=extra["phone_number"],
+        whatsapp_api=extra.get("whatsapp_api", "0"),
+        keywords=[],
+    ))
+
 aplicar_keywords_persistidas(pessoas)  # keywords passam a ser editáveis em runtime via comando /kw
 BLOCKLIST = carregar_blocklist()  # {"whey protein": ["pasta de amendoim"], ...} — via /kw block
 
@@ -132,6 +149,15 @@ def parse_keyword_e_termo(resto: str):
     return keyword.strip().lower(), termo.strip().lower()
 
 
+def parse_nome_e_telefone(resto: str):
+    """'Fulano: +55 11 99999-9999' -> ('Fulano', '5511999999999')"""
+    if ":" not in resto:
+        return None, None
+    nome, telefone = resto.split(":", 1)
+    telefone = re.sub(r"\D", "", telefone)
+    return nome.strip(), telefone
+
+
 def mensagem_bloqueada(keyword: str, message_text: str) -> bool:
     termos = BLOCKLIST.get(keyword.lower(), [])
     return any(termo in message_text for termo in termos)
@@ -156,7 +182,8 @@ AJUDA_KW = (
     "/kw remove <keyword> — remove de você\n"
     "/kw remove <Nome>: <keyword> — remove de outra pessoa\n"
     "/kw block <keyword>: <termo> — ignora mensagens de <keyword> que contenham <termo>\n"
-    "/kw unblock <keyword>: <termo> — remove esse filtro"
+    "/kw unblock <keyword>: <termo> — remove esse filtro\n"
+    "/kw newperson <Nome>: <telefone> — cadastra alguém novo (precisa já ser seu contato no Telegram)"
 )
 
 
@@ -220,6 +247,29 @@ async def gerenciar_keywords(event):
             termos.remove(termo)
             salvar_blocklist(BLOCKLIST)
             await event.reply(f"✅ Removido bloqueio de '{termo}' para '{keyword}'.")
+        return
+
+    if acao == "newperson" and len(partes) == 3:
+        nome, telefone = parse_nome_e_telefone(partes[2])
+        if not nome or not telefone:
+            await event.reply("Formato: /kw newperson <Nome>: <telefone com DDI e DDD>")
+            return
+
+        if encontrar_pessoa(nome):
+            await event.reply(f"'{nome}' já está cadastrado.")
+            return
+
+        nova_pessoa = Pessoa(nome=nome, phone_number=telefone, whatsapp_api="0", keywords=[])
+        pessoas.append(nova_pessoa)
+        PESSOAS_EXTRA.append({"nome": nome, "phone_number": telefone, "whatsapp_api": "0"})
+        salvar_pessoas_extras(PESSOAS_EXTRA)
+
+        await event.reply(
+            f"✅ '{nome}' cadastrado com o telefone {telefone}.\n"
+            f"⚠️ Isso só funciona se {telefone} já for um contato salvo na sua conta do Telegram "
+            f"— senão o envio vai falhar (sem travar o bot, só não chega a notificação).\n"
+            f"Agora use /kw add {nome}: <palavra> pra cadastrar o que monitorar."
+        )
         return
 
     await event.reply(AJUDA_KW)

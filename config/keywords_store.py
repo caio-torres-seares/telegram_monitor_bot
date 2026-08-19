@@ -16,6 +16,14 @@ BLOCKLIST_FILE = os.getenv(
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "blocklist.json"),
 )
 
+# Pessoas cadastradas em runtime via /kw newperson (nome, telefone, whatsapp_api) — separado de
+# quem vem do .env, pra não misturar dado "estrutural" configurado manualmente com dado editável
+# por comando.
+PESSOAS_EXTRA_FILE = os.getenv(
+    "PESSOAS_EXTRA_FILE",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "pessoas_extra.json"),
+)
+
 
 def _ler_arquivo(caminho):
     if not os.path.exists(caminho):
@@ -59,3 +67,13 @@ def salvar_blocklist(blocklist):
     os.makedirs(os.path.dirname(BLOCKLIST_FILE), exist_ok=True)
     with open(BLOCKLIST_FILE, "w", encoding="utf-8") as f:
         json.dump(blocklist, f, ensure_ascii=False, indent=2)
+
+
+def carregar_pessoas_extras():
+    return _ler_arquivo(PESSOAS_EXTRA_FILE) or []
+
+
+def salvar_pessoas_extras(pessoas_extras):
+    os.makedirs(os.path.dirname(PESSOAS_EXTRA_FILE), exist_ok=True)
+    with open(PESSOAS_EXTRA_FILE, "w", encoding="utf-8") as f:
+        json.dump(pessoas_extras, f, ensure_ascii=False, indent=2)
