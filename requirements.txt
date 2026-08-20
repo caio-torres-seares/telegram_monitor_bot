@@ -1,4 +1,5 @@
 telethon
 python-dotenv
 requests
+tzdata
 winotify; platform_system=="Windows"

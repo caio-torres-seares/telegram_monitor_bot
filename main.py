@@ -8,6 +8,9 @@ import os
 import requests
 import urllib.parse
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+TZ_BR = ZoneInfo("America/Sao_Paulo")
 
 IS_WINDOWS = platform.system() == "Windows"
 if IS_WINDOWS:
@@ -66,7 +69,7 @@ REPEAT_MINUTES = 20
 
 # Limpeza periódica do cache (evita crescimento infinito de memória)
 def limpar_cache_antigo():
-    agora = datetime.now()
+    agora = datetime.now(TZ_BR)
     expirados = [k for k, v in ENVIADOS.items() if agora - v > timedelta(minutes=REPEAT_MINUTES * 2)]
     for k in expirados:
         del ENVIADOS[k]
@@ -96,7 +99,7 @@ async def monitor_messages(event):
                 continue
 
             produto_normalizado = normalizar_produto(message_text, keyword_real, pattern)
-            agora = datetime.now()
+            agora = datetime.now(TZ_BR)
 
             if produto_normalizado:
                 id_unico = f"{keyword_real}:{produto_normalizado}"
@@ -111,7 +114,7 @@ async def monitor_messages(event):
             print(f"🎯 {keyword_real} encontrado para {pessoa.nome} às {data_hora_br}")
 
             texto_alerta = (
-                f"🚨 Olá {pessoa.nome}, o item: {keyword_real.capitalize()} foi encontrado às {data_hora_br}!\n"
+                f"🚨 {keyword_real.capitalize()} encontrado às {data_hora_br}!\n"
                 f"Canal: {event.chat.title}\n\n"
                 f"{event.raw_text}"
             )
@@ -390,7 +393,7 @@ async def notificar_ntfy(titulo: str, mensagem: str):
         print(f"X - Erro ao enviar ntfy: {e}")
 
 
-print("Iniciando monitoramento de promoções às", datetime.now().strftime("%H:%M:%S do dia %d/%m/%Y"))
+print("Iniciando monitoramento de promoções às", datetime.now(TZ_BR).strftime("%H:%M:%S do dia %d/%m/%Y"))
 print("Quantidade de pessoas carregadas: ", len(pessoas))
 print("-" * 67)
 for p in pessoas:
