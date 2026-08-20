@@ -9,8 +9,12 @@ import requests
 import urllib.parse
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from rapidfuzz import fuzz
 
 TZ_BR = ZoneInfo("America/Sao_Paulo")
+
+FUZZY_THRESHOLD = 85  # 0-100; abaixo disso o token não é considerado "parecido o suficiente"
+FUZZY_MIN_LEN = 4     # tokens menores que isso não entram no fuzzy (ex: "pro", "kit" geram falso positivo fácil)
 
 IS_WINDOWS = platform.system() == "Windows"
 if IS_WINDOWS:
@@ -87,18 +91,27 @@ async def monitor_messages(event):
             if keyword in KEYWORD_PATTERNS:
                 pattern = KEYWORD_PATTERNS[keyword]["regex"]
                 keyword_real = KEYWORD_PATTERNS[keyword].get("extract", keyword.lower())
-            else:
-                pattern = rf"\b{re.escape(keyword)}\b(?![^a-zA-Z0-9]*ti\b)"
-                keyword_real = keyword.lower()
 
-            if not re.search(pattern, message_text, re.IGNORECASE):
-                continue  # ← mais limpo que if aninhado
+                if not re.search(pattern, message_text, re.IGNORECASE):
+                    continue  # ← mais limpo que if aninhado
+
+                linha_encontrada = None  # normalizar_produto usa o pattern pra achar a linha
+            else:
+                keyword_real = keyword.lower()
+                linha_encontrada = encontrar_linha_keyword(keyword_real, message_text)
+
+                if linha_encontrada is None:
+                    continue
 
             if mensagem_bloqueada(keyword, message_text):
                 print(f"[SKIP] '{keyword_real}' ignorado por termo bloqueado")
                 continue
 
-            produto_normalizado = normalizar_produto(message_text, keyword_real, pattern)
+            produto_normalizado = (
+                normalizar_produto(message_text, keyword_real, pattern)
+                if linha_encontrada is None
+                else re.sub(r'\s+', ' ', linha_encontrada).strip()
+            )
             agora = datetime.now(TZ_BR)
 
             if produto_normalizado:
@@ -159,6 +172,42 @@ def parse_nome_e_telefone(resto: str):
     nome, telefone = resto.split(":", 1)
     telefone = re.sub(r"\D", "", telefone)
     return nome.strip(), telefone
+
+
+def _token_bate(token: str, linha_lower: str, palavras_linha: list[str]) -> bool:
+    if re.search(rf"\b{re.escape(token)}\b", linha_lower, re.IGNORECASE):
+        return True
+    if len(token) < FUZZY_MIN_LEN:
+        return False
+    return any(fuzz.ratio(token, palavra) >= FUZZY_THRESHOLD for palavra in palavras_linha)
+
+
+def encontrar_linha_keyword(keyword: str, message_text: str) -> str | None:
+    """Acha a linha da mensagem em que a keyword bate.
+
+    Keyword de uma palavra só: mantém o comportamento antigo (match exato,
+    excluindo variante "ti" — ex: "4070" não deve bater em "4070 Ti").
+
+    Keyword com várias palavras: todas as palavras precisam estar na mesma
+    linha, em qualquer ordem (ex: "mousepad superframe pro player" bate em
+    "mousepad gamer superframe pro player"), tolerando pequeno erro de
+    digitação por palavra via fuzzy matching.
+    """
+    tokens = keyword.lower().split()
+
+    if len(tokens) == 1:
+        pattern = rf"\b{re.escape(tokens[0])}\b(?![^a-zA-Z0-9]*ti\b)"
+        for linha in message_text.splitlines():
+            if re.search(pattern, linha, re.IGNORECASE):
+                return linha
+        return None
+
+    for linha in message_text.splitlines():
+        linha_lower = linha.lower()
+        palavras_linha = re.findall(r"\w+", linha_lower)
+        if all(_token_bate(t, linha_lower, palavras_linha) for t in tokens):
+            return linha
+    return None
 
 
 def mensagem_bloqueada(keyword: str, message_text: str) -> bool:

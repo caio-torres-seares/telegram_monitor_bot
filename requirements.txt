@@ -2,4 +2,5 @@ telethon
 python-dotenv
 requests
 tzdata
+rapidfuzz
 winotify; platform_system=="Windows"
