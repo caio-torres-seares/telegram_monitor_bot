@@ -115,7 +115,7 @@ async def monitor_messages(event):
             agora = datetime.now(TZ_BR)
 
             if produto_normalizado:
-                id_unico = f"{keyword_real}:{produto_normalizado}"
+                id_unico = f"{pessoa.nome}:{keyword_real}:{produto_normalizado}"
                 if id_unico in ENVIADOS:
                     if agora - ENVIADOS[id_unico] < timedelta(minutes=REPEAT_MINUTES):
                         print(f"[SKIP] {keyword_real} repetido há menos de {REPEAT_MINUTES} min → {id_unico}")
